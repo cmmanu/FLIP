@@ -3,7 +3,12 @@
   "displayName": "FLIP — File-Linked Intelligent Pairing",
   "description": "Smartly flip between test and production code in any language or project structure",
   "version": "0.1.0",
-  "publisher": "your-publisher-id",
+  "license": "MIT",
+  "publisher": "cmmanu",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cmmanu/FLIP"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
