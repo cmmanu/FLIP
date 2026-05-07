@@ -1,0 +1,53 @@
+{
+  "name": "bazel-test-switcher",
+  "displayName": "Bazel Test Switcher",
+  "description": "Quickly switch between test and production code in Bazel projects",
+  "version": "0.1.0",
+  "publisher": "your-publisher-id",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bazelTestSwitcher.switch",
+        "title": "Bazel: Switch Test/Source"
+      },
+      {
+        "command": "bazelTestSwitcher.switchAt",
+        "title": "Bazel: Switch to Acceptance Test"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "bazelTestSwitcher.switch",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "bazelTestSwitcher.switchAt",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "editorTextFocus"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "tsc -p ./ && node out/switcher.test.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/vscode": "^1.118.0",
+    "@vscode/vsce": "^3.9.1",
+    "typescript": "^6.0.3"
+  }
+}
