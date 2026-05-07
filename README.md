@@ -1,4 +1,4 @@
-# Bazel Test Switcher
+# FLIP — File-Linked Intelligent Pairing
 
 VS Code extension to quickly switch between source and test files. Works out of the box with common conventions and is fully configurable for custom project structures.
 
@@ -6,8 +6,8 @@ VS Code extension to quickly switch between source and test files. Works out of 
 
 | Shortcut | Command | Description |
 |----------|---------|-------------|
-| `Cmd+Shift+T` / `Ctrl+Shift+T` | Switch Test/Source | Toggle between unit test and source file |
-| `Cmd+Shift+A` / `Ctrl+Shift+A` | Switch to Acceptance Test | Toggle between source and acceptance test |
+| `Cmd+Shift+T` / `Ctrl+Shift+T` | FLIP: Flip to Test/Source | Toggle between unit test and source file |
+| `Cmd+Shift+A` / `Ctrl+Shift+A` | FLIP: Flip to Related File | Toggle between source and related file (e.g. acceptance test) |
 
 ## Supported Patterns (Defaults)
 
@@ -19,14 +19,14 @@ VS Code extension to quickly switch between source and test files. Works out of 
 
 ## Configuration
 
-All settings are under `bazelTestSwitcher.*` in VS Code settings.
+All settings are under `flip.*` in VS Code settings.
 
-### `pathMappings`
+### `flip.pathMappings`
 
-Directory segment pairs for source ↔ test mirroring. First match wins.
+Directory segment pairs for source ↔ test mirroring. Order matters — first match wins.
 
 ```jsonc
-"bazelTestSwitcher.pathMappings": [
+"flip.pathMappings": [
   { "source": "src/modules", "test": "test/modules" },
   { "source": "src/main/java", "test": "src/test/java" },
   { "source": "src/main/kotlin", "test": "src/test/kotlin" },
@@ -36,34 +36,36 @@ Directory segment pairs for source ↔ test mirroring. First match wins.
 ]
 ```
 
-### `testFilePrefixes` / `testFileSuffixes`
+### `flip.testFilePrefixes` / `flip.testFileSuffixes`
 
 Filename conventions that identify test files:
 
 ```jsonc
-"bazelTestSwitcher.testFilePrefixes": ["test_", "ut_"],
-"bazelTestSwitcher.testFileSuffixes": ["_test", ".test", ".spec"]
+"flip.testFilePrefixes": ["test_", "ut_"],
+"flip.testFileSuffixes": ["_test", ".test", ".spec"]
 ```
 
-### `javaStyle`
+### `flip.javaStyle`
 
 Enable `TestFoo` / `FooTest` detection (default: `true`).
 
-### `atMappings`
+### `flip.relatedMappings`
 
-Template-based mappings for acceptance tests. Placeholders: `{name}` matches one path segment, last placeholder matches multiple segments.
+Template-based mappings for related files (e.g. acceptance tests, e2e tests). Placeholders: `{name}` matches one path segment, last placeholder matches multiple segments. `searchPaths` limits the fuzzy search to specific glob patterns.
 
 ```jsonc
-"bazelTestSwitcher.atMappings": [
+"flip.relatedMappings": [
   {
     "source": "components/{comp}/src/modules/{path}",
     "test": "test/at_components/{comp}/{path}",
-    "filePrefix": "at_"
+    "filePrefix": "at_",
+    "searchPaths": ["**/test/at_components/**"]
   },
   {
     "source": "components/{comp}/src",
     "test": "test/at_components/{comp}",
-    "filePrefix": "at_"
+    "filePrefix": "at_",
+    "searchPaths": ["**/test/at_components/**"]
   }
 ]
 ```
@@ -72,10 +74,10 @@ Template-based mappings for acceptance tests. Placeholders: `{name}` matches one
 
 ```jsonc
 {
-  "bazelTestSwitcher.pathMappings": [{ "source": "lib", "test": "spec" }],
-  "bazelTestSwitcher.testFilePrefixes": [],
-  "bazelTestSwitcher.testFileSuffixes": ["_spec"],
-  "bazelTestSwitcher.javaStyle": false
+  "flip.pathMappings": [{ "source": "lib", "test": "spec" }],
+  "flip.testFilePrefixes": [],
+  "flip.testFileSuffixes": ["_spec"],
+  "flip.javaStyle": false
 }
 ```
 
@@ -83,10 +85,10 @@ Template-based mappings for acceptance tests. Placeholders: `{name}` matches one
 
 ```jsonc
 {
-  "bazelTestSwitcher.pathMappings": [{ "source": "src", "test": "tests" }],
-  "bazelTestSwitcher.testFilePrefixes": ["test_"],
-  "bazelTestSwitcher.testFileSuffixes": [],
-  "bazelTestSwitcher.javaStyle": false
+  "flip.pathMappings": [{ "source": "src", "test": "tests" }],
+  "flip.testFilePrefixes": ["test_"],
+  "flip.testFileSuffixes": [],
+  "flip.javaStyle": false
 }
 ```
 
@@ -94,7 +96,7 @@ Template-based mappings for acceptance tests. Placeholders: `{name}` matches one
 
 ```sh
 npm install && npm run compile
-npx @vscode/vsce package
+npm run package
 ```
 
 Then install via *Extensions → Install from VSIX…*
