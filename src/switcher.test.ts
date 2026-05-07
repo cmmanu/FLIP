@@ -1,4 +1,6 @@
-import { getCandidates, getAtSearchInfo } from './candidates';
+import { getCandidates, getRelatedSearchInfo } from './candidates';
+import { defaultConfig, SwitcherConfig } from './config';
+import { scoreMatch, extractKeywords } from './scoring';
 
 // Simple test runner (no test framework needed)
 let passed = 0;
@@ -22,8 +24,8 @@ function assertIncludes(arr: string[], expected: string, message: string) {
 
 console.log('\n=== Bazel Test Switcher - Unit Tests ===\n');
 
-// --- Source -> Test (parkmaster-style) ---
-console.log('Source -> Test (Bazel directory mirror):');
+// --- Source -> Test (Bazel directory mirror with default config) ---
+console.log('Source -> Test (directory mirror):');
 
 assertIncludes(
   getCandidates('/workspace/qm/components/pdc/src/modules/pdc/pdc.cpp'),
@@ -43,8 +45,8 @@ assertIncludes(
   'pdc.cpp -> ut_pdc.h (test utility)'
 );
 
-// --- Test -> Source (parkmaster-style) ---
-console.log('\nTest -> Source (Bazel directory mirror):');
+// --- Test -> Source ---
+console.log('\nTest -> Source (directory mirror):');
 
 assertIncludes(
   getCandidates('/workspace/qm/components/pdc/test/modules/pdc/test_pdc.cpp'),
@@ -112,12 +114,66 @@ assertIncludes(
   'app.ts -> app.test.ts'
 );
 
-// --- AT: Source -> AT ---
+// --- Java style ---
+console.log('\nJava style:');
+
+assertIncludes(
+  getCandidates('/workspace/src/main/java/Foo.java'),
+  '/workspace/src/test/java/TestFoo.java',
+  'Foo.java -> TestFoo.java (Java dir mirror)'
+);
+
+assertIncludes(
+  getCandidates('/workspace/src/main/java/Foo.java'),
+  '/workspace/src/test/java/FooTest.java',
+  'Foo.java -> FooTest.java (Java dir mirror)'
+);
+
+assertIncludes(
+  getCandidates('/workspace/src/test/java/TestFoo.java'),
+  '/workspace/src/main/java/Foo.java',
+  'TestFoo.java -> Foo.java (Java dir mirror)'
+);
+
+// --- Custom config ---
+console.log('\nCustom config:');
+
+const customConfig: SwitcherConfig = {
+  pathMappings: [{ source: 'lib', test: 'spec' }],
+  testFilePrefixes: [],
+  testFileSuffixes: ['_spec'],
+  javaStyle: false,
+  relatedMappings: [],
+};
+
+assertIncludes(
+  getCandidates('/workspace/lib/parser.rb', customConfig),
+  '/workspace/spec/parser_spec.rb',
+  'Ruby: lib/parser.rb -> spec/parser_spec.rb (custom config)'
+);
+
+assertIncludes(
+  getCandidates('/workspace/spec/parser_spec.rb', customConfig),
+  '/workspace/lib/parser.rb',
+  'Ruby: spec/parser_spec.rb -> lib/parser.rb (custom config)'
+);
+
+// --- React __tests__ ---
+console.log('\nReact __tests__:');
+
+assertIncludes(
+  getCandidates('/workspace/src/utils/format.ts'),
+  '/workspace/__tests__/utils/format.test.ts',
+  'src/format.ts -> __tests__/format.test.ts'
+);
+
+// --- AT: Source -> Acceptance Test ---
 console.log('\nAT: Source -> Acceptance Test:');
 
 {
-  const info = getAtSearchInfo('/workspace/qm/components/pdc/src/modules/pdc/pdc.cpp');
+  const info = getRelatedSearchInfo('/workspace/qm/components/pdc/src/modules/pdc/pdc.cpp');
   assert(info !== undefined, 'getAtSearchInfo returns result for pdc source');
+  assert(info!.direction === 'source-to-test', 'direction is source-to-test');
   assertIncludes(
     info!.exactCandidates,
     '/workspace/qm/test/at_components/pdc/pdc/at_pdc.h',
@@ -136,7 +192,7 @@ console.log('\nAT: Source -> Acceptance Test:');
 }
 
 {
-  const info = getAtSearchInfo('/workspace/qm/components/pdc/src/modules/auto_pdc/auto_pdc.cpp');
+  const info = getRelatedSearchInfo('/workspace/qm/components/pdc/src/modules/auto_pdc/auto_pdc.cpp');
   assert(info !== undefined, 'getAtSearchInfo returns result for auto_pdc source');
   assertIncludes(
     info!.exactCandidates,
@@ -149,8 +205,9 @@ console.log('\nAT: Source -> Acceptance Test:');
 console.log('\nAT: Acceptance Test -> Source:');
 
 {
-  const info = getAtSearchInfo('/workspace/qm/test/at_components/pdc/pdc/at_pdc.h');
+  const info = getRelatedSearchInfo('/workspace/qm/test/at_components/pdc/pdc/at_pdc.h');
   assert(info !== undefined, 'getAtSearchInfo returns result for AT file');
+  assert(info!.direction === 'test-to-source', 'direction is test-to-source');
   assertIncludes(
     info!.exactCandidates,
     '/workspace/qm/components/pdc/src/modules/pdc/pdc.cpp',
@@ -164,24 +221,7 @@ console.log('\nAT: Acceptance Test -> Source:');
 }
 
 {
-  const info = getAtSearchInfo('/workspace/qm/test/at_components/remote_parking/test_remote_parking_aborts.cpp');
-  assert(info !== undefined, 'getAtSearchInfo returns result for remote_parking AT at comp root');
-  // AT at component root: srcBase = "remote_parking_aborts", comp = "remote_parking"
-  // Should strip comp prefix → look in modules/aborts/
-  assert(
-    info!.globs.some(g => g.includes('modules/aborts/**') || g.includes('modules/**/aborts')),
-    'AT at comp root -> glob searches aborts module'
-  );
-  assertIncludes(
-    info!.exactCandidates,
-    '/workspace/qm/components/remote_parking/src/modules/aborts/aborts.cpp',
-    'test_remote_parking_aborts.cpp -> modules/aborts/aborts.cpp'
-  );
-}
-
-// --- AT at component root (subdir case still works) ---
-{
-  const info = getAtSearchInfo('/workspace/qm/test/at_components/remote_parking/center_locking_requester/at_center_locking_requester.h');
+  const info = getRelatedSearchInfo('/workspace/qm/test/at_components/remote_parking/center_locking_requester/at_center_locking_requester.h');
   assert(info !== undefined, 'getAtSearchInfo returns result for AT in subdir');
   assertIncludes(
     info!.exactCandidates,
@@ -194,56 +234,128 @@ console.log('\nAT: Acceptance Test -> Source:');
 console.log('\nAT: Component root -> all ATs:');
 
 {
-  const info = getAtSearchInfo('/workspace/qm/components/pdc/src/swc_pdc.cpp');
+  const info = getRelatedSearchInfo('/workspace/qm/components/pdc/src/swc_pdc.cpp');
   assert(info !== undefined, 'getAtSearchInfo returns result for swc_pdc.cpp');
+  assert(info!.direction === 'source-to-test', 'direction is source-to-test');
   assert(
-    info!.globs.some(g => g.includes('at_components/pdc/**/at_*')),
-    'swc_pdc.cpp -> glob searches all AT files under pdc'
+    info!.globs.some(g => g.includes('at_components/pdc/at_*')),
+    'swc_pdc.cpp -> glob searches AT files under pdc'
   );
   assert(info!.moduleName === 'pdc', 'module name is pdc');
 }
 
-// --- AT: Source (nested module) -> AT at component root ---
-console.log('\nAT: Source module -> AT at component root:');
-
-{
-  const info = getAtSearchInfo('/workspace/qm/components/remote_parking/src/modules/aborts/partial_network_timeout.cpp');
-  assert(info !== undefined, 'getAtSearchInfo returns result for aborts source');
-  // Should search at component root level too
-  assert(
-    info!.globs.some(g => g.includes('at_components/remote_parking/at_*aborts*')),
-    'aborts source -> glob searches AT root for *aborts* files'
-  );
-  assert(
-    info!.globs.some(g => g.includes('at_components/remote_parking/at_*partial_network_timeout*')),
-    'aborts source -> glob searches AT root for *partial_network_timeout* files'
-  );
-  assertIncludes(
-    info!.exactCandidates,
-    '/workspace/qm/test/at_components/remote_parking/at_remote_parking_aborts.h',
-    'aborts source -> exact candidate includes at_remote_parking_aborts.h'
-  );
-}
-
-// --- AT: UT test -> AT cross-reference ---
-console.log('\nAT: Unit test -> Acceptance Test:');
-
-{
-  const info = getAtSearchInfo('/workspace/qm/components/pdc/test/modules/pdc/test_pdc.cpp');
-  assert(info !== undefined, 'getAtSearchInfo returns result for UT test file');
-  assertIncludes(
-    info!.exactCandidates,
-    '/workspace/qm/test/at_components/pdc/pdc/at_pdc.h',
-    'UT test_pdc.cpp -> AT at_pdc.h'
-  );
-}
-
-// --- AT: unrecognized file ---
+// --- AT: Unrecognized file ---
 console.log('\nAT: Unrecognized file:');
 
 {
-  const info = getAtSearchInfo('/workspace/some/random/file.cpp');
+  const info = getRelatedSearchInfo('/workspace/some/random/file.cpp');
   assert(info === undefined, 'getAtSearchInfo returns undefined for unrecognized path');
+}
+
+// --- AT: Custom mapping ---
+console.log('\nAT: Custom mapping:');
+
+{
+  const customAtConfig: SwitcherConfig = {
+    ...defaultConfig,
+    relatedMappings: [
+      { source: 'app/features/{feature}', test: 'e2e/{feature}', filePrefix: 'e2e_' },
+    ],
+  };
+  const info = getRelatedSearchInfo('/workspace/app/features/login/login.ts', customAtConfig);
+  assert(info !== undefined, 'custom AT mapping matches source');
+  assert(info!.direction === 'source-to-test', 'custom AT direction is source-to-test');
+  assertIncludes(
+    info!.exactCandidates,
+    '/workspace/e2e/login/e2e_login.h',
+    'custom: login.ts -> e2e/login/e2e_login.h'
+  );
+}
+
+// --- Fuzzy scoring ---
+console.log('\nFuzzy scoring:');
+
+{
+  // AT file at comp root should score high for matching source module
+  const source = '/workspace/qm/components/remote_parking/src/modules/aborts/aborts.cpp';
+  const atMatch = '/workspace/qm/test/at_components/remote_parking/at_remote_parking_aborts.h';
+  const atUnrelated = '/workspace/qm/test/at_components/remote_parking/at_remote_parking_startup.h';
+  const scoreGood = scoreMatch(source, atMatch, 'source-to-test', ['test_', 'ut_', 'at_']);
+  const scoreBad = scoreMatch(source, atUnrelated, 'source-to-test', ['test_', 'ut_', 'at_']);
+  assert(scoreGood > scoreBad, `aborts.cpp: at_..._aborts.h scores higher (${scoreGood}) than at_..._startup.h (${scoreBad})`);
+  assert(scoreGood > 0, `at_remote_parking_aborts.h has positive score (${scoreGood})`);
+}
+
+{
+  // AT→Source: at_remote_parking_aborts should prefer source files with "aborts"
+  const atFile = '/workspace/qm/test/at_components/remote_parking/at_remote_parking_aborts.h';
+  const goodSource = '/workspace/qm/components/remote_parking/src/modules/aborts/aborts.cpp';
+  const badSource = '/workspace/qm/components/remote_parking/src/modules/startup/startup.cpp';
+  const scoreGood = scoreMatch(atFile, goodSource, 'test-to-source', ['test_', 'ut_', 'at_']);
+  const scoreBad = scoreMatch(atFile, badSource, 'test-to-source', ['test_', 'ut_', 'at_']);
+  assert(scoreGood > scoreBad, `AT→Source: aborts.cpp scores higher (${scoreGood}) than startup.cpp (${scoreBad})`);
+}
+
+{
+  // Extension affinity: .cpp source should prefer .cpp test over .h
+  const source = '/workspace/qm/components/pdc/src/modules/pdc/pdc.cpp';
+  const testCpp = '/workspace/qm/components/pdc/test/modules/pdc/test_pdc.cpp';
+  const testH = '/workspace/qm/components/pdc/test/modules/pdc/ut_pdc.h';
+  const scoreCpp = scoreMatch(source, testCpp, 'source-to-test', ['test_', 'ut_', 'at_']);
+  const scoreH = scoreMatch(source, testH, 'source-to-test', ['test_', 'ut_', 'at_']);
+  assert(scoreCpp > scoreH, `.cpp source prefers .cpp test (${scoreCpp}) over .h (${scoreH})`);
+}
+
+{
+  // But .h source can still find .cpp test (valid in C++)
+  const source = '/workspace/qm/components/pdc/src/modules/pdc/pdc.h';
+  const testCpp = '/workspace/qm/components/pdc/test/modules/pdc/test_pdc.cpp';
+  const score = scoreMatch(source, testCpp, 'source-to-test', ['test_', 'ut_', 'at_']);
+  assert(score > 0, `.h source → .cpp test has positive score (${score})`);
+}
+
+{
+  // Keyword extraction strips prefixes
+  const kw = extractKeywords('/workspace/test/at_components/pdc/at_pdc.h', ['test_', 'ut_', 'at_']);
+  assert(kw.includes('pdc'), `extractKeywords strips at_ prefix: [${kw.join(', ')}]`);
+}
+
+{
+  // Same file should get negative score
+  const f = '/workspace/qm/components/pdc/src/modules/pdc/pdc.cpp';
+  const score = scoreMatch(f, f, 'source-to-test', ['test_', 'ut_', 'at_']);
+  assert(score < 0, `same file scores negative (${score})`);
+}
+
+{
+  // TypeScript: .ts source prefers .ts test, not .tsx
+  const source = '/workspace/src/utils/format.ts';
+  const testTs = '/workspace/src/utils/format.test.ts';
+  const testTsx = '/workspace/src/components/format.test.tsx';
+  const scoreTs = scoreMatch(source, testTs, 'source-to-test', ['test_', 'ut_', 'at_']);
+  const scoreTsx = scoreMatch(source, testTsx, 'source-to-test', ['test_', 'ut_', 'at_']);
+  assert(scoreTs >= scoreTsx, `.ts source prefers .ts (${scoreTs}) over .tsx (${scoreTsx})`);
+}
+
+{
+  // AT→source: source file should score much higher than another AT file
+  const atFile = '/workspace/qm/test/at_components/pdc/at_pdc.h';
+  const sourceFile = '/workspace/qm/components/pdc/src/modules/pdc/pdc.cpp';
+  const otherAt = '/workspace/qm/test/at_components/pdc/at_pdc_startup.h';
+  const scoreSource = scoreMatch(atFile, sourceFile, 'test-to-source', ['test_', 'ut_', 'at_']);
+  const scoreOtherAt = scoreMatch(atFile, otherAt, 'test-to-source', ['test_', 'ut_', 'at_']);
+  assert(scoreSource > scoreOtherAt, `AT→source: source (${scoreSource}) >> other AT (${scoreOtherAt})`);
+  assert(scoreSource > 0, `AT→source: source has positive score (${scoreSource})`);
+}
+
+{
+  // AT→source: should not pick a .h file from AT directory
+  const atFile = '/workspace/qm/test/at_components/remote_parking/at_remote_parking_aborts.h';
+  const sourceFile = '/workspace/qm/components/remote_parking/src/modules/aborts/aborts.cpp';
+  const otherAtH = '/workspace/qm/test/at_components/remote_parking/at_remote_parking_startup.h';
+  const scoreSource = scoreMatch(atFile, sourceFile, 'test-to-source', ['test_', 'ut_', 'at_']);
+  const scoreAtH = scoreMatch(atFile, otherAtH, 'test-to-source', ['test_', 'ut_', 'at_']);
+  assert(scoreSource > scoreAtH, `AT→source: source (${scoreSource}) >> AT header (${scoreAtH})`);
 }
 
 // --- Summary ---

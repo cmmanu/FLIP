@@ -1,7 +1,7 @@
 {
-  "name": "bazel-test-switcher",
-  "displayName": "Bazel Test Switcher",
-  "description": "Quickly switch between test and production code in Bazel projects",
+  "name": "flip",
+  "displayName": "FLIP — File-Linked Intelligent Pairing",
+  "description": "Smartly flip between test and production code in any language or project structure",
   "version": "0.1.0",
   "publisher": "your-publisher-id",
   "engines": {
@@ -15,28 +15,155 @@
   "contributes": {
     "commands": [
       {
-        "command": "bazelTestSwitcher.switch",
-        "title": "Bazel: Switch Test/Source"
+        "command": "flip.switch",
+        "title": "FLIP: Flip to Test/Source"
       },
       {
-        "command": "bazelTestSwitcher.switchAt",
-        "title": "Bazel: Switch to Acceptance Test"
+        "command": "flip.switchRelated",
+        "title": "FLIP: Flip to Related File"
       }
     ],
     "keybindings": [
       {
-        "command": "bazelTestSwitcher.switch",
+        "command": "flip.switch",
         "key": "ctrl+shift+t",
         "mac": "cmd+shift+t",
         "when": "editorTextFocus"
       },
       {
-        "command": "bazelTestSwitcher.switchAt",
+        "command": "flip.switchRelated",
         "key": "ctrl+shift+a",
         "mac": "cmd+shift+a",
         "when": "editorTextFocus"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "FLIP",
+      "properties": {
+        "flip.pathMappings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Path segment identifying source directories"
+              },
+              "test": {
+                "type": "string",
+                "description": "Path segment identifying test directories"
+              }
+            },
+            "required": [
+              "source",
+              "test"
+            ]
+          },
+          "default": [
+            {
+              "source": "src/modules",
+              "test": "test/modules"
+            },
+            {
+              "source": "src/main/java",
+              "test": "src/test/java"
+            },
+            {
+              "source": "src/main/kotlin",
+              "test": "src/test/kotlin"
+            },
+            {
+              "source": "lib",
+              "test": "test"
+            },
+            {
+              "source": "src",
+              "test": "__tests__"
+            },
+            {
+              "source": "src",
+              "test": "test"
+            }
+          ],
+          "description": "Directory path mappings between source and test folders. Order matters — first match wins."
+        },
+        "flip.testFilePrefixes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "test_",
+            "ut_"
+          ],
+          "description": "Filename prefixes that identify test files (e.g. test_foo.cpp)"
+        },
+        "flip.testFileSuffixes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "_test",
+            ".test",
+            ".spec"
+          ],
+          "description": "Filename suffixes (before extension) that identify test files (e.g. foo_test.go, app.test.ts)"
+        },
+        "flip.javaStyle": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Java-style Test prefix/suffix detection (TestFoo.java, FooTest.java)"
+        },
+        "flip.relatedMappings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Source path template with {name} (one segment) or {path} (multi-segment) placeholders"
+              },
+              "test": {
+                "type": "string",
+                "description": "Test path template using the same placeholders"
+              },
+              "filePrefix": {
+                "type": "string",
+                "description": "Filename prefix for related files (e.g. at_, e2e_)"
+              },
+              "searchPaths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Glob patterns to scope where AT files are searched (e.g. '**/test/at_components/**'). Limits fuzzy search to these paths."
+              }
+            },
+            "required": []
+          },
+          "default": [
+            {
+              "source": "components/{comp}/src/modules/{path}",
+              "test": "test/at_components/{comp}/{path}",
+              "filePrefix": "at_",
+              "searchPaths": [
+                "**/test/at_components/**"
+              ]
+            },
+            {
+              "source": "components/{comp}/src",
+              "test": "test/at_components/{comp}",
+              "filePrefix": "at_",
+              "searchPaths": [
+                "**/test/at_components/**"
+              ]
+            }
+          ],
+          "description": "Path mappings for related files (e.g. acceptance tests, e2e tests) using template placeholders. {name} matches one path segment, last placeholder matches multiple segments."
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",

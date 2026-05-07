@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import { switchTestFile, switchAtFile } from './switcher';
+import { switchTestFile, switchRelatedFile } from './switcher';
 
 export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
-    vscode.commands.registerCommand('bazelTestSwitcher.switch', async () => {
+    vscode.commands.registerCommand('flip.switch', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         vscode.window.showWarningMessage('No active editor');
@@ -11,13 +11,13 @@ export function activate(context: vscode.ExtensionContext) {
       }
       await switchTestFile(editor.document.uri);
     }),
-    vscode.commands.registerCommand('bazelTestSwitcher.switchAt', async () => {
+    vscode.commands.registerCommand('flip.switchRelated', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         vscode.window.showWarningMessage('No active editor');
         return;
       }
-      await switchAtFile(editor.document.uri);
+      await switchRelatedFile(editor.document.uri);
     })
   );
 }

@@ -1,305 +1,218 @@
 import * as path from 'path';
+import { SwitcherConfig, defaultConfig, templateToRegex, applyTemplate } from './config';
 
-/**
- * Given a file path, returns an ordered list of candidate counterpart paths.
- * If the file is a test file, candidates point to source files and vice versa.
- */
-export function getCandidates(filePath: string): string[] {
+function matchMapping(dir: string, segment: string): boolean {
+  return dir.includes(`/${segment}/`) || dir.endsWith(`/${segment}`);
+}
+
+function replaceMapping(dir: string, from: string, to: string): string {
+  if (dir.includes(`/${from}/`)) {
+    return dir.replace(`/${from}/`, `/${to}/`);
+  }
+  if (dir.endsWith(`/${from}`)) {
+    return dir.slice(0, -(from.length)) + to;
+  }
+  return dir;
+}
+
+export function getCandidates(filePath: string, config: SwitcherConfig = defaultConfig): string[] {
   const dir = path.dirname(filePath);
   const ext = path.extname(filePath);
   const base = path.basename(filePath, ext);
   const candidates: string[] = [];
 
-  // --- Detect if current file is a TEST file ---
-
-  // Pattern 1: test_ prefix (Bazel C++ convention)
-  if (base.startsWith('test_')) {
-    const srcBase = base.replace(/^test_/, '');
-    // Directory mirror: test/modules/X/ -> src/modules/X/
-    if (dir.includes('/test/')) {
-      const srcDir = dir.replace(/\/test\//, '/src/');
-      candidates.push(path.join(srcDir, `${srcBase}${ext}`));
-      candidates.push(path.join(srcDir, `${srcBase}.h`));
+  // Check if file matches any test prefix
+  for (const prefix of config.testFilePrefixes) {
+    if (base.startsWith(prefix)) {
+      const srcBase = base.slice(prefix.length);
+      for (const mapping of config.pathMappings) {
+        if (matchMapping(dir, mapping.test)) {
+          const srcDir = replaceMapping(dir, mapping.test, mapping.source);
+          candidates.push(path.join(srcDir, `${srcBase}${ext}`));
+          candidates.push(path.join(srcDir, `${srcBase}.h`));
+        }
+      }
+      candidates.push(path.join(dir, `${srcBase}${ext}`));
+      const parentDir = path.dirname(dir);
+      candidates.push(path.join(parentDir, srcBase, `${srcBase}${ext}`));
+      candidates.push(path.join(parentDir, srcBase, `${srcBase}.h`));
+      candidates.push(path.join(parentDir, `${srcBase}${ext}`));
+      return candidates;
     }
-    // Same directory
-    candidates.push(path.join(dir, `${srcBase}${ext}`));
-    // Parent directory (for flat test/ dirs like shared/test/)
-    const parentDir = path.dirname(dir);
-    candidates.push(path.join(parentDir, srcBase, `${srcBase}${ext}`));
-    candidates.push(path.join(parentDir, srcBase, `${srcBase}.h`));
-    candidates.push(path.join(parentDir, `${srcBase}${ext}`));
-    return candidates;
   }
 
-  // Pattern 2: ut_ prefix (Bazel test utility)
-  if (base.startsWith('ut_')) {
-    const srcBase = base.replace(/^ut_/, '');
-    if (dir.includes('/test/')) {
-      const srcDir = dir.replace(/\/test\//, '/src/');
-      candidates.push(path.join(srcDir, `${srcBase}${ext}`));
-      candidates.push(path.join(srcDir, `${srcBase}.h`));
+  // Check test file suffixes
+  for (const suffix of config.testFileSuffixes) {
+    if (base.endsWith(suffix)) {
+      const srcBase = base.slice(0, -suffix.length);
+      candidates.push(path.join(dir, `${srcBase}${ext}`));
+      for (const mapping of config.pathMappings) {
+        if (matchMapping(dir, mapping.test)) {
+          const srcDir = replaceMapping(dir, mapping.test, mapping.source);
+          candidates.push(path.join(srcDir, `${srcBase}${ext}`));
+        }
+      }
+      return candidates;
     }
-    candidates.push(path.join(dir, `${srcBase}${ext}`));
-    return candidates;
   }
 
-  // Pattern 3: _test suffix (Go/C++)
-  if (base.endsWith('_test')) {
-    const srcBase = base.replace(/_test$/, '');
-    candidates.push(path.join(dir, `${srcBase}${ext}`));
-    if (dir.includes('/test/')) {
-      const srcDir = dir.replace(/\/test\//, '/src/');
-      candidates.push(path.join(srcDir, `${srcBase}${ext}`));
+  // Check Java-style Test prefix/suffix
+  if (config.javaStyle) {
+    if (base.startsWith('Test') && base[4]?.toUpperCase() === base[4]) {
+      const srcBase = base.slice(4);
+      candidates.push(path.join(dir, `${srcBase}${ext}`));
+      for (const mapping of config.pathMappings) {
+        if (matchMapping(dir, mapping.test)) {
+          const srcDir = replaceMapping(dir, mapping.test, mapping.source);
+          candidates.push(path.join(srcDir, `${srcBase}${ext}`));
+        }
+      }
+      return candidates;
     }
-    return candidates;
-  }
-
-  // Pattern 4: .test. / .spec. suffix (JS/TS)
-  if (base.endsWith('.test') || base.endsWith('.spec')) {
-    const srcBase = base.replace(/\.(test|spec)$/, '');
-    candidates.push(path.join(dir, `${srcBase}${ext}`));
-    return candidates;
-  }
-
-  // Pattern 5: Test prefix/suffix (Java)
-  if (base.startsWith('Test') && base[4]?.toUpperCase() === base[4]) {
-    const srcBase = base.replace(/^Test/, '');
-    candidates.push(path.join(dir, `${srcBase}${ext}`));
-    if (dir.includes('/test/')) {
-      const srcDir = dir.replace(/\/test\//, '/src/');
-      candidates.push(path.join(srcDir, `${srcBase}${ext}`));
+    if (base.endsWith('Test')) {
+      const srcBase = base.slice(0, -4);
+      candidates.push(path.join(dir, `${srcBase}${ext}`));
+      for (const mapping of config.pathMappings) {
+        if (matchMapping(dir, mapping.test)) {
+          const srcDir = replaceMapping(dir, mapping.test, mapping.source);
+          candidates.push(path.join(srcDir, `${srcBase}${ext}`));
+        }
+      }
+      return candidates;
     }
-    return candidates;
   }
-  if (base.endsWith('Test')) {
-    const srcBase = base.replace(/Test$/, '');
-    candidates.push(path.join(dir, `${srcBase}${ext}`));
-    if (dir.includes('/test/')) {
-      const srcDir = dir.replace(/\/test\//, '/src/');
-      candidates.push(path.join(srcDir, `${srcBase}${ext}`));
+
+  // Source file → generate test candidates
+  for (const mapping of config.pathMappings) {
+    if (matchMapping(dir, mapping.source)) {
+      const testDir = replaceMapping(dir, mapping.source, mapping.test);
+      for (const prefix of config.testFilePrefixes) {
+        candidates.push(path.join(testDir, `${prefix}${base}${ext}`));
+        candidates.push(path.join(testDir, `${prefix}${base}.cpp`));
+        candidates.push(path.join(testDir, `${prefix}${base}.h`));
+      }
+      for (const suffix of config.testFileSuffixes) {
+        candidates.push(path.join(testDir, `${base}${suffix}${ext}`));
+      }
+      if (config.javaStyle && ['.java', '.kt'].includes(ext)) {
+        candidates.push(path.join(testDir, `Test${base}${ext}`));
+        candidates.push(path.join(testDir, `${base}Test${ext}`));
+      }
     }
-    return candidates;
   }
 
-  // --- Current file is a SOURCE file — produce test candidates ---
-
-  // Priority 1: Bazel directory mirror (src/ -> test/) with test_ prefix
-  if (dir.includes('/src/')) {
-    const testDir = dir.replace(/\/src\//, '/test/');
-    candidates.push(path.join(testDir, `test_${base}${ext}`));
-    candidates.push(path.join(testDir, `test_${base}.cpp`));
-    candidates.push(path.join(testDir, `ut_${base}.h`));
-    candidates.push(path.join(testDir, `ut_${base}${ext}`));
+  // Same directory with prefixes
+  for (const prefix of config.testFilePrefixes) {
+    candidates.push(path.join(dir, `${prefix}${base}${ext}`));
   }
 
-  // Priority 2: test_ prefix in same directory
-  candidates.push(path.join(dir, `test_${base}${ext}`));
-
-  // Priority 3: Sibling test/ directory (for shared/utils style)
+  // Sibling test/ directory with prefixes
   const parentDir = path.dirname(dir);
-  candidates.push(path.join(parentDir, 'test', `test_${base}${ext}`));
-  candidates.push(path.join(parentDir, 'test', `test_${base}.cpp`));
-
-  // Priority 4: _test suffix (Go/C++)
-  candidates.push(path.join(dir, `${base}_test${ext}`));
-
-  // Priority 5: .test. / .spec. suffix (JS/TS)
-  if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
-    candidates.push(path.join(dir, `${base}.test${ext}`));
-    candidates.push(path.join(dir, `${base}.spec${ext}`));
+  for (const prefix of config.testFilePrefixes) {
+    candidates.push(path.join(parentDir, 'test', `${prefix}${base}${ext}`));
+    candidates.push(path.join(parentDir, 'test', `${prefix}${base}.cpp`));
   }
 
-  // Priority 6: Java style
-  if (['.java', '.kt'].includes(ext)) {
+  // Suffixes in same directory
+  for (const suffix of config.testFileSuffixes) {
+    candidates.push(path.join(dir, `${base}${suffix}${ext}`));
+  }
+
+  // Java-style in same directory
+  if (config.javaStyle && ['.java', '.kt'].includes(ext)) {
     candidates.push(path.join(dir, `Test${base}${ext}`));
     candidates.push(path.join(dir, `${base}Test${ext}`));
-    if (dir.includes('/src/')) {
-      const testDir = dir.replace(/\/src\//, '/test/');
-      candidates.push(path.join(testDir, `Test${base}${ext}`));
-      candidates.push(path.join(testDir, `${base}Test${ext}`));
-    }
   }
 
   return candidates;
 }
 
-/**
- * Given a file path, returns the glob pattern(s) to find AT (acceptance test) counterparts.
- * Since one source file can map to many AT files, we return glob patterns
- * rather than exact paths so the caller can show a QuickPick.
- *
- * Mapping:
- *   qm/components/<comp>/src/modules/<module>/foo.cpp
- *     -> qm/test/at_components/<comp>/<module>/at_*.h
- *     -> qm/test/at_components/<comp>/<module>/test_*.cpp
- *
- *   qm/test/at_components/<comp>/<module>/at_foo.h  (AT -> source)
- *     -> qm/components/<comp>/src/modules/<module>/
- */
 export interface AtSearchResult {
-  /** Glob patterns to search for AT files */
   globs: string[];
-  /** If we can determine exact candidates, list them here */
   exactCandidates: string[];
-  /** The module name extracted from the path */
   moduleName: string | undefined;
+  direction: 'test-to-source' | 'source-to-test';
 }
 
-/**
- * Extract the AT search info for a given file.
- * Returns undefined if the file doesn't belong to a recognized structure.
- */
-export function getAtSearchInfo(filePath: string): AtSearchResult | undefined {
+export function getRelatedSearchInfo(filePath: string, config: SwitcherConfig = defaultConfig): AtSearchResult | undefined {
   const dir = path.dirname(filePath);
   const ext = path.extname(filePath);
   const base = path.basename(filePath, ext);
 
-  // --- AT file -> Source ---
-  // Pattern: qm/test/at_components/<comp>/<module>/at_<name>.h  (nested in subdir)
-  //       or qm/test/at_components/<comp>/at_<name>.h           (at component root)
-  //       or qm/test/at_components/<comp>/<module>/test_<name>.cpp
-  const atComponentMatch = dir.match(/\/test\/at_components\/(.+)/);
-  if (atComponentMatch && (base.startsWith('at_') || base.startsWith('test_'))) {
-    const relPath = atComponentMatch[1]; // e.g. "pdc/pdc", "pdc/auto_pdc", or "remote_parking"
-    const srcBase = base.replace(/^(at_|test_)/, '');
+  for (const mapping of config.relatedMappings) {
+    // Skip mappings that only have searchPaths (no templates)
+    if (!mapping.source || !mapping.test || !mapping.filePrefix) continue;
 
-    const parts = relPath.split('/');
-    const comp = parts[0]; // e.g. "pdc" or "remote_parking"
-    const modulePath = parts.slice(1).join('/'); // e.g. "pdc", "auto_pdc", or "" (empty)
+    const testRegex = templateToRegex(mapping.test);
+    const sourceRegex = templateToRegex(mapping.source);
 
-    const componentRoot = dir.replace(/\/test\/at_components\/.*/, '');
+    // Check if this is an AT file (matches test pattern)
+    const testMatch = dir.match(testRegex);
+    if (testMatch?.groups && (base.startsWith(mapping.filePrefix) || base.startsWith('test_'))) {
+      const srcBase = base.replace(new RegExp(`^(${escapeRegex(mapping.filePrefix)}|test_)`), '');
+      const sourceDir = applyTemplate(mapping.source, testMatch.groups);
 
-    // Build candidates and globs
-    const exactCandidates: string[] = [];
-    const globs: string[] = [];
+      // Find the root (everything before the matched portion)
+      const matchStart = dir.indexOf(testMatch[0]);
+      const root = dir.slice(0, matchStart);
 
-    if (modulePath) {
-      // AT in subdir → source is in modules/<modulePath>/
-      const srcDir = path.join(componentRoot, 'components', comp, 'src', 'modules', modulePath);
-      exactCandidates.push(path.join(srcDir, `${srcBase}.cpp`));
-      exactCandidates.push(path.join(srcDir, `${srcBase}.h`));
-      globs.push(`**/components/${comp}/src/modules/${modulePath}/${srcBase}.*`);
-      globs.push(`**/components/${comp}/src/modules/${modulePath}/**/${srcBase}.*`);
-    } else {
-      // AT at component root (e.g., at_remote_parking_aborts.h)
-      // The source could be in any module under this component
-      // Also try stripping the component name prefix from srcBase
-      // e.g. "remote_parking_aborts" → look for "aborts" module
-      const withoutCompPrefix = srcBase.startsWith(comp + '_')
-        ? srcBase.slice(comp.length + 1)
-        : srcBase;
+      const srcDir = path.join(root, sourceDir);
+      const exactCandidates = [
+        path.join(srcDir, `${srcBase}.cpp`),
+        path.join(srcDir, `${srcBase}.h`),
+        path.join(srcDir, `${srcBase}${ext}`),
+      ];
 
-      globs.push(`**/components/${comp}/src/modules/**/${withoutCompPrefix}.*`);
-      globs.push(`**/components/${comp}/src/modules/**/${srcBase}.*`);
-      globs.push(`**/components/${comp}/src/modules/${withoutCompPrefix}/**`);
+      // Build globs for broader search
+      const globs: string[] = [];
+      // Search in the mapped source directory
+      globs.push(`**/${sourceDir}/${srcBase}.*`);
+      globs.push(`**/${sourceDir}/**/${srcBase}.*`);
 
-      // Exact guesses
-      const srcDir = path.join(componentRoot, 'components', comp, 'src', 'modules');
-      exactCandidates.push(path.join(srcDir, withoutCompPrefix, `${withoutCompPrefix}.cpp`));
-      exactCandidates.push(path.join(srcDir, withoutCompPrefix, `${withoutCompPrefix}.h`));
-      exactCandidates.push(path.join(srcDir, `${srcBase}.cpp`));
-      exactCandidates.push(path.join(srcDir, `${srcBase}.h`));
+      const lastGroup = Object.values(testMatch.groups).pop();
+      return {
+        globs,
+        exactCandidates,
+        moduleName: lastGroup?.split('/').pop(),
+        direction: 'test-to-source',
+      };
     }
 
-    return {
-      globs,
-      exactCandidates,
-      moduleName: modulePath ? modulePath.split('/').pop() : comp,
-    };
-  }
+    // Check if this is a source file (matches source pattern)
+    const srcMatch = dir.match(sourceRegex);
+    if (srcMatch?.groups) {
+      const testDir = applyTemplate(mapping.test, srcMatch.groups);
 
-  // --- Source -> AT ---
-  // Pattern: qm/components/<comp>/src/modules/<module>/foo.cpp
-  const srcComponentMatch = dir.match(/\/components\/([^/]+)\/src\/modules\/(.+)/);
-  if (srcComponentMatch) {
-    const comp = srcComponentMatch[1]; // e.g. "pdc", "remote_parking"
-    const modulePath = srcComponentMatch[2]; // e.g. "pdc", "aborts", "active_pdc/apdc_activation_deactivation"
+      // Find the root
+      const matchStart = dir.indexOf(srcMatch[0]);
+      const root = dir.slice(0, matchStart);
 
-    const componentRoot = dir.replace(/\/components\/.*/, '');
-    const atDir = path.join(componentRoot, 'test', 'at_components', comp, modulePath);
-    const atCompDir = path.join(componentRoot, 'test', 'at_components', comp);
-
-    // The first module segment (top-level module name)
-    const topModule = modulePath.split('/')[0];
-
-    // Since ATs can be in a subdirectory matching the module OR at the component root,
-    // search both locations
-    return {
-      globs: [
-        // Exact module subdir
-        `**/test/at_components/${comp}/${modulePath}/at_*`,
-        `**/test/at_components/${comp}/${modulePath}/test_*`,
-        // Top-level module subdir (if nested deeper)
-        `**/test/at_components/${comp}/${topModule}/at_*`,
-        `**/test/at_components/${comp}/${topModule}/test_*`,
-        // Component root (AT files like at_remote_parking_aborts.h that sit at comp level)
-        `**/test/at_components/${comp}/at_*${topModule}*`,
-        `**/test/at_components/${comp}/test_*${topModule}*`,
-        `**/test/at_components/${comp}/at_*${base}*`,
-        `**/test/at_components/${comp}/test_*${base}*`,
-      ],
-      exactCandidates: [
-        path.join(atDir, `at_${base}.h`),
+      const atDir = path.join(root, testDir);
+      const exactCandidates = [
+        path.join(atDir, `${mapping.filePrefix}${base}.h`),
+        path.join(atDir, `${mapping.filePrefix}${base}${ext}`),
         path.join(atDir, `test_${base}.cpp`),
-        // Also check component root with comp prefix
-        path.join(atCompDir, `at_${comp}_${topModule}.h`),
-        path.join(atCompDir, `test_${comp}_${topModule}.cpp`),
-        path.join(atCompDir, `at_${base}.h`),
-        path.join(atCompDir, `test_${base}.cpp`),
-      ],
-      moduleName: topModule,
-    };
-  }
+        path.join(atDir, `test_${base}${ext}`),
+      ];
 
-  // --- Source at component root level (swc_<comp>.cpp) ---
-  const swcMatch = dir.match(/\/components\/([^/]+)\/src$/);
-  if (swcMatch) {
-    const comp = swcMatch[1];
-    const componentRoot = dir.replace(/\/components\/.*/, '');
+      const globs = [
+        `**/${testDir}/${mapping.filePrefix}*`,
+        `**/${testDir}/test_*`,
+      ];
 
-    return {
-      globs: [
-        `**/test/at_components/${comp}/**/at_*`,
-        `**/test/at_components/${comp}/**/test_*`,
-        `**/test/at_components/${comp}/at_*`,
-        `**/test/at_components/${comp}/test_*`,
-      ],
-      exactCandidates: [],
-      moduleName: comp,
-    };
-  }
-
-  // --- UT test file -> AT (cross-reference) ---
-  // Pattern: qm/components/<comp>/test/modules/<module>/test_<name>.cpp
-  const utTestMatch = dir.match(/\/components\/([^/]+)\/test\/modules\/(.+)/);
-  if (utTestMatch && (base.startsWith('test_') || base.startsWith('ut_'))) {
-    const comp = utTestMatch[1];
-    const modulePath = utTestMatch[2];
-    const srcBase = base.replace(/^(test_|ut_)/, '');
-    const topModule = modulePath.split('/')[0];
-
-    const componentRoot = dir.replace(/\/components\/.*/, '');
-    const atDir = path.join(componentRoot, 'test', 'at_components', comp, modulePath);
-    const atCompDir = path.join(componentRoot, 'test', 'at_components', comp);
-
-    return {
-      globs: [
-        `**/test/at_components/${comp}/${modulePath}/at_*`,
-        `**/test/at_components/${comp}/${modulePath}/test_*`,
-        `**/test/at_components/${comp}/${topModule}/at_*`,
-        `**/test/at_components/${comp}/${topModule}/test_*`,
-        `**/test/at_components/${comp}/at_*${topModule}*`,
-        `**/test/at_components/${comp}/test_*${topModule}*`,
-      ],
-      exactCandidates: [
-        path.join(atDir, `at_${srcBase}.h`),
-        path.join(atDir, `test_${srcBase}.cpp`),
-        path.join(atCompDir, `at_${comp}_${topModule}.h`),
-        path.join(atCompDir, `test_${comp}_${topModule}.cpp`),
-      ],
-      moduleName: topModule,
-    };
+      const lastGroup = Object.values(srcMatch.groups).pop();
+      return {
+        globs,
+        exactCandidates,
+        moduleName: lastGroup?.split('/').pop(),
+        direction: 'source-to-test',
+      };
+    }
   }
 
   return undefined;
+}
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
