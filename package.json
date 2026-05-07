@@ -1,5 +1,5 @@
 {
-  "name": "flip",
+  "name": "flip-test-switcher",
   "displayName": "FLIP — File-Linked Intelligent Pairing",
   "description": "Smartly flip between test and production code in any language or project structure",
   "version": "0.1.0",
