@@ -11,7 +11,7 @@
   },
   "icon": "assets/FLIP.PNG",
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.118.0"
   },
   "categories": [
     "Other"
